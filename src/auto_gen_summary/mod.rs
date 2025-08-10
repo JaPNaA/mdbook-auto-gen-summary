@@ -175,8 +175,6 @@ fn gen_summary_lines(root_dir: &Path, group: &MdGroup, config: &AutoGenConfig) -
             continue;
         }
 
-        eprintln!("{:?}", path);
-
         if config
             .directory_index_names
             .contains(&match path.file_name() {
@@ -288,6 +286,5 @@ fn walk_dir(dir: &Path, config: &AutoGenConfig) -> MdGroup {
         group.md_list.push(md);
     }
 
-    eprintln!("{:?}", group.md_list.len());
     return group;
 }
