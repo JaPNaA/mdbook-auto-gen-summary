@@ -1,7 +1,7 @@
 [package]
 name = "mdbook-auto-gen-summary"
 version = "0.1.10"
-authors = ["George"]
+authors = ["George", "JaPNaA"]
 edition = "2018"
 description = "A preprocessor and cli tool for mdbook to auto generate summary."
 license = "MIT"
@@ -15,7 +15,7 @@ keywords = ["mdbook", "markdown", "summary"]
 
 [dependencies]
 clap = "2.33.1"
-mdbook = "0.4.6"
+mdbook = "0.4.52"
 anyhow = "1.0.32"
 serde = "1.0.114"
 serde_derive = "1.0.114"
