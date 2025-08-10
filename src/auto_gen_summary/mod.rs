@@ -5,15 +5,17 @@ use mdbook::errors::Error;
 use mdbook::preprocess::{Preprocessor, PreprocessorContext};
 use mdbook::MDBook;
 use std::fs;
+use std::fs::DirEntry;
 use std::io::prelude::*;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
-use std::fs::DirEntry;
 
+use crate::auto_gen_summary::config::AutoGenConfig;
+
+pub mod config;
+
+pub const PREPROCESSOR_NAME: &str = "auto-gen-summary";
 const SUMMARY_FILE: &str = "SUMMARY.md";
-const README_FILE: &str = "README.md";
-
-const FIRST_LINE_AS_LINK_TEXT: &str = "first-line-as-link-text";
 
 #[derive(Debug)]
 pub struct MdFile {
@@ -26,7 +28,7 @@ pub struct MdFile {
 pub struct MdGroup {
     pub name: String,
     pub path: String,
-    pub has_readme: bool,
+    pub readme_name: Option<String>,
     pub group_list: Vec<MdGroup>,
     pub md_list: Vec<MdFile>,
 }
@@ -41,23 +43,12 @@ impl AutoGenSummary {
 
 impl Preprocessor for AutoGenSummary {
     fn name(&self) -> &str {
-        "auto-gen-summary"
+        PREPROCESSOR_NAME
     }
 
     fn run(&self, ctx: &PreprocessorContext, _book: Book) -> Result<Book, Error> {
-        let mut use_first_line_as_link_text = false;
-
-        // In testing we want to tell the preprocessor to blow up by setting a
-        // particular config value
-        if let Some(nop_cfg) = ctx.config.get_preprocessor(self.name()) {
-            if nop_cfg.contains_key("blow-up") {
-                anyhow::bail!("Boom!!1!");
-            }
-            if nop_cfg.contains_key(FIRST_LINE_AS_LINK_TEXT) {
-                let v = nop_cfg.get(FIRST_LINE_AS_LINK_TEXT).unwrap();
-                use_first_line_as_link_text = v.as_bool().unwrap_or(false);
-            }
-        }
+        let mut config = AutoGenConfig::new();
+        config.apply_config(&ctx.config)?;
 
         let source_dir = ctx
             .root
@@ -66,16 +57,14 @@ impl Preprocessor for AutoGenSummary {
             .unwrap()
             .to_string();
 
-        gen_summary(&source_dir, use_first_line_as_link_text);
+        gen_summary(&source_dir, &config);
 
         match MDBook::load(&ctx.root) {
-            Ok(mdbook) => {
-                return Ok(mdbook.book);
-            }
+            Ok(mdbook) => Ok(mdbook.book),
             Err(e) => {
-                panic!(e);
+                panic!("{}", e);
             }
-        };
+        }
     }
 
     fn supports_renderer(&self, renderer: &str) -> bool {
@@ -93,13 +82,13 @@ fn md5(buf: &String) -> String {
     return md5_string;
 }
 
-pub fn gen_summary(source_dir: &String, use_first_line_as_link_text: bool) {
+pub fn gen_summary(source_dir: &String, config: &AutoGenConfig) {
     let mut source_dir = source_dir.clone();
     if !source_dir.ends_with("/") {
         source_dir.push_str("/")
     }
-    let group = walk_dir(source_dir.clone().as_str());
-    let lines = gen_summary_lines(source_dir.clone().as_str(), &group, use_first_line_as_link_text);
+    let group = walk_dir(source_dir.clone().as_str(), config);
+    let lines = gen_summary_lines(source_dir.clone().as_str(), &group, config);
     let buff: String = lines.join("\n");
 
     let new_md5_string = md5(&buff);
@@ -113,7 +102,9 @@ pub fn gen_summary(source_dir: &String, use_first_line_as_link_text: bool) {
 
     let mut old_summary_file_content = String::new();
     let mut summary_file_reader = BufReader::new(summary_file);
-    summary_file_reader.read_to_string(&mut old_summary_file_content).unwrap();
+    summary_file_reader
+        .read_to_string(&mut old_summary_file_content)
+        .unwrap();
 
     let old_md5_string = md5(&old_summary_file_content);
 
@@ -138,7 +129,7 @@ fn count(s: &String) -> usize {
     cnt
 }
 
-fn gen_summary_lines(root_dir: &str, group: &MdGroup, use_first_line_as_link_text: bool) -> Vec<String> {
+fn gen_summary_lines(root_dir: &str, group: &MdGroup, config: &AutoGenConfig) -> Vec<String> {
     let mut lines: Vec<String> = vec![];
 
     let path = group.path.replace(root_dir, "");
@@ -154,9 +145,26 @@ fn gen_summary_lines(root_dir: &str, group: &MdGroup, use_first_line_as_link_tex
     if path == "" {
         lines.push(String::from("# Summary"));
 
-        buff_link = format!("{}* [{}]({})", buff_spaces, name, README_FILE);
+        buff_link = format!(
+            "{}* [{}]({})",
+            buff_spaces,
+            name,
+            group
+                .readme_name
+                .as_ref()
+                .expect("Internal error: no README file for directory")
+        );
     } else {
-        buff_link = format!("{}* [{}]({}/{})", buff_spaces, name, path, README_FILE);
+        buff_link = format!(
+            "{}* [{}]({}/{})",
+            buff_spaces,
+            name,
+            path,
+            group
+                .readme_name
+                .as_ref()
+                .expect("Internal error: no README file for directory")
+        );
     }
 
     if buff_spaces.len() == 0 {
@@ -173,7 +181,11 @@ fn gen_summary_lines(root_dir: &str, group: &MdGroup, use_first_line_as_link_tex
         if path == SUMMARY_FILE {
             continue;
         }
-        if path.ends_with(README_FILE) {
+        if config
+            .directory_index_names
+            .iter()
+            .any(|readme_name| path.ends_with(readme_name))
+        {
             continue;
         }
 
@@ -181,7 +193,7 @@ fn gen_summary_lines(root_dir: &str, group: &MdGroup, use_first_line_as_link_tex
         let buff_spaces = String::from(" ".repeat(4 * (cnt - 1)));
 
         let buff_link: String;
-        if use_first_line_as_link_text && md.title.len() > 0 {
+        if config.first_line_as_link_text && md.title.len() > 0 {
             buff_link = format!("{}* [{}]({})", buff_spaces, md.title, path);
         } else {
             buff_link = format!("{}* [{}]({})", buff_spaces, md.name, path);
@@ -191,7 +203,7 @@ fn gen_summary_lines(root_dir: &str, group: &MdGroup, use_first_line_as_link_tex
     }
 
     for group in &group.group_list {
-        let mut line = gen_summary_lines(root_dir, group, use_first_line_as_link_text);
+        let mut line = gen_summary_lines(root_dir, group, config);
         lines.append(&mut line);
     }
 
@@ -221,7 +233,7 @@ fn get_title(entry: &DirEntry) -> String {
     return title;
 }
 
-fn walk_dir(dir: &str) -> MdGroup {
+fn walk_dir(dir: &str, config: &AutoGenConfig) -> MdGroup {
     let read_dir = fs::read_dir(dir).unwrap();
     let name = Path::new(dir)
         .file_name()
@@ -233,7 +245,7 @@ fn walk_dir(dir: &str) -> MdGroup {
     let mut group = MdGroup {
         name: name,
         path: dir.to_string(),
-        has_readme: false,
+        readme_name: None,
         group_list: vec![],
         md_list: vec![],
     };
@@ -242,16 +254,16 @@ fn walk_dir(dir: &str) -> MdGroup {
         let entry = entry.unwrap();
         // println!("{:?}", entry);
         if entry.file_type().unwrap().is_dir() {
-            let g = walk_dir(entry.path().to_str().unwrap());
-            if g.has_readme {
+            let g = walk_dir(entry.path().to_str().unwrap(), &config);
+            if g.readme_name.is_some() {
                 group.group_list.push(g);
             }
             continue;
         }
         let file_name = entry.file_name();
         let file_name = file_name.to_str().unwrap().to_string();
-        if file_name == README_FILE {
-            group.has_readme = true;
+        if config.directory_index_names.contains(&file_name) {
+            let _ = group.readme_name.insert(file_name.clone());
         }
         let arr: Vec<&str> = file_name.split(".").collect();
         if arr.len() < 2 {

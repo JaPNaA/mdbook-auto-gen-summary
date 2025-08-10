@@ -7,6 +7,8 @@ use mdbook::preprocess::{CmdPreprocessor, Preprocessor};
 use std::io;
 use std::process;
 
+use crate::auto_gen_summary::config::AutoGenConfig;
+
 pub fn make_app() -> App<'static, 'static> {
     App::new("auto-gen-summary-preprocessor")
         .about("A mdbook preprocessor to auto generate book summary")
@@ -17,8 +19,17 @@ pub fn make_app() -> App<'static, 'static> {
         )
         .subcommand(
             SubCommand::with_name("gen")
-                .arg(Arg::with_name("dir").required(true).help("the dir of mdbook markdown src"))
-                .arg(Arg::with_name("title").required(false).short("t").help("make the first line of markdown file as line text in SUMMARY.md"))
+                .arg(
+                    Arg::with_name("dir")
+                        .required(true)
+                        .help("the dir of mdbook markdown src"),
+                )
+                .arg(
+                    Arg::with_name("title")
+                        .required(false)
+                        .short("t")
+                        .help("make the first line of markdown file as line text in SUMMARY.md"),
+                )
                 .about("gen SUMMARY.md"),
         )
 }
@@ -36,9 +47,10 @@ fn main() {
             .expect("Required argument")
             .to_string();
 
-        let use_first_line_as_link_text = sub_args.is_present("title");
+        let mut config = AutoGenConfig::new();
+        config.first_line_as_link_text = sub_args.is_present("title");
 
-        auto_gen_summary::gen_summary(&source_dir, use_first_line_as_link_text);
+        auto_gen_summary::gen_summary(&source_dir, &config);
     } else if let Err(e) = handle_preprocessing(&preprocessor) {
         eprintln!("{}", e);
         process::exit(1);
