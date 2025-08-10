@@ -4,11 +4,12 @@ use mdbook::book::Book;
 use mdbook::errors::Error;
 use mdbook::preprocess::{Preprocessor, PreprocessorContext};
 use mdbook::MDBook;
+use std::ffi::OsString;
 use std::fs;
 use std::fs::DirEntry;
 use std::io::prelude::*;
 use std::io::{BufReader, BufWriter};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::auto_gen_summary::config::AutoGenConfig;
 
@@ -21,13 +22,13 @@ const SUMMARY_FILE: &str = "SUMMARY.md";
 pub struct MdFile {
     pub name: String,
     pub title: String,
-    pub path: String,
+    pub path: PathBuf,
 }
 
 #[derive(Debug)]
 pub struct MdGroup {
-    pub name: String,
-    pub path: String,
+    pub name: OsString,
+    pub path: PathBuf,
     pub readme_name: Option<String>,
     pub group_list: Vec<MdGroup>,
     pub md_list: Vec<MdFile>,
@@ -50,12 +51,7 @@ impl Preprocessor for AutoGenSummary {
         let mut config = AutoGenConfig::new();
         config.apply_config(&ctx.config)?;
 
-        let source_dir = ctx
-            .root
-            .join(&ctx.config.book.src)
-            .to_str()
-            .unwrap()
-            .to_string();
+        let source_dir = ctx.root.join(&ctx.config.book.src);
 
         gen_summary(&source_dir, &config);
 
@@ -82,22 +78,21 @@ fn md5(buf: &String) -> String {
     return md5_string;
 }
 
-pub fn gen_summary(source_dir: &String, config: &AutoGenConfig) {
-    let mut source_dir = source_dir.clone();
-    if !source_dir.ends_with("/") {
-        source_dir.push_str("/")
-    }
-    let group = walk_dir(source_dir.clone().as_str(), config);
-    let lines = gen_summary_lines(source_dir.clone().as_str(), &group, config);
+pub fn gen_summary(source_dir: &Path, config: &AutoGenConfig) {
+    let group = walk_dir(source_dir, config);
+    let lines = gen_summary_lines(source_dir, &group, config);
     let buff: String = lines.join("\n");
 
     let new_md5_string = md5(&buff);
+
+    let mut summary_file_path = PathBuf::from(source_dir);
+    summary_file_path.push(SUMMARY_FILE);
 
     let summary_file = std::fs::OpenOptions::new()
         .write(true)
         .read(true)
         .create(true)
-        .open(source_dir.clone() + "/" + SUMMARY_FILE)
+        .open(&summary_file_path)
         .unwrap();
 
     let mut old_summary_file_content = String::new();
@@ -117,32 +112,30 @@ pub fn gen_summary(source_dir: &String, config: &AutoGenConfig) {
         .read(true)
         .create(true)
         .truncate(true)
-        .open(source_dir.clone() + "/" + SUMMARY_FILE)
+        .open(&summary_file_path)
         .unwrap();
     let mut summary_file_writer = BufWriter::new(summary_file);
     summary_file_writer.write_all(buff.as_bytes()).unwrap();
 }
 
-fn count(s: &String) -> usize {
-    let v: Vec<&str> = s.split("/").collect();
-    let cnt = v.len();
-    cnt
-}
-
-fn gen_summary_lines(root_dir: &str, group: &MdGroup, config: &AutoGenConfig) -> Vec<String> {
+fn gen_summary_lines(root_dir: &Path, group: &MdGroup, config: &AutoGenConfig) -> Vec<String> {
     let mut lines: Vec<String> = vec![];
 
-    let path = group.path.replace(root_dir, "");
-    let cnt = count(&path);
+    let path = group.path.strip_prefix(root_dir).unwrap();
+    let cnt = path.components().count();
 
-    let buff_spaces = String::from(" ".repeat(4 * (cnt - 1)));
-    let mut name = group.name.clone();
+    let buff_spaces = if cnt > 0 {
+        String::from(" ".repeat(4 * (cnt - 1)))
+    } else {
+        String::from("")
+    };
+    let mut name = group.name.to_string_lossy().to_string();
 
     let buff_link: String;
     if name == "src" {
         name = String::from("Welcome");
     }
-    if path == "" {
+    if cnt == 0 {
         lines.push(String::from("# Summary"));
 
         buff_link = format!(
@@ -159,7 +152,7 @@ fn gen_summary_lines(root_dir: &str, group: &MdGroup, config: &AutoGenConfig) ->
             "{}* [{}]({}/{})",
             buff_spaces,
             name,
-            path,
+            path.to_string_lossy().to_string(),
             group
                 .readme_name
                 .as_ref()
@@ -177,26 +170,41 @@ fn gen_summary_lines(root_dir: &str, group: &MdGroup, config: &AutoGenConfig) ->
     lines.push(buff_link);
 
     for md in &group.md_list {
-        let path = md.path.replace(root_dir, "");
-        if path == SUMMARY_FILE {
+        let path = md.path.strip_prefix(root_dir).unwrap();
+        if path.file_name() == Some(&OsString::from(SUMMARY_FILE)) {
             continue;
         }
+
+        eprintln!("{:?}", path);
+
         if config
             .directory_index_names
-            .iter()
-            .any(|readme_name| path.ends_with(readme_name))
+            .contains(&match path.file_name() {
+                Some(x) => x.to_string_lossy().to_string(),
+                None => String::from(""),
+            })
         {
             continue;
         }
 
-        let cnt = count(&path);
+        let cnt = path.components().count();
         let buff_spaces = String::from(" ".repeat(4 * (cnt - 1)));
 
         let buff_link: String;
         if config.first_line_as_link_text && md.title.len() > 0 {
-            buff_link = format!("{}* [{}]({})", buff_spaces, md.title, path);
+            buff_link = format!(
+                "{}* [{}]({})",
+                buff_spaces,
+                md.title,
+                path.to_string_lossy().to_string()
+            );
         } else {
-            buff_link = format!("{}* [{}]({})", buff_spaces, md.name, path);
+            buff_link = format!(
+                "{}* [{}]({})",
+                buff_spaces,
+                md.name,
+                path.to_string_lossy().to_string()
+            );
         }
 
         lines.push(buff_link);
@@ -233,18 +241,12 @@ fn get_title(entry: &DirEntry) -> String {
     return title;
 }
 
-fn walk_dir(dir: &str, config: &AutoGenConfig) -> MdGroup {
+fn walk_dir(dir: &Path, config: &AutoGenConfig) -> MdGroup {
     let read_dir = fs::read_dir(dir).unwrap();
-    let name = Path::new(dir)
-        .file_name()
-        .unwrap()
-        .to_owned()
-        .to_str()
-        .unwrap()
-        .to_string();
+
     let mut group = MdGroup {
-        name: name,
-        path: dir.to_string(),
+        name: OsString::from(dir.file_name().unwrap()),
+        path: PathBuf::from(dir),
         readme_name: None,
         group_list: vec![],
         md_list: vec![],
@@ -252,14 +254,15 @@ fn walk_dir(dir: &str, config: &AutoGenConfig) -> MdGroup {
 
     for entry in read_dir {
         let entry = entry.unwrap();
-        // println!("{:?}", entry);
+
         if entry.file_type().unwrap().is_dir() {
-            let g = walk_dir(entry.path().to_str().unwrap(), &config);
+            let g = walk_dir(&entry.path(), &config);
             if g.readme_name.is_some() {
                 group.group_list.push(g);
             }
             continue;
         }
+
         let file_name = entry.file_name();
         let file_name = file_name.to_str().unwrap().to_string();
         if config.directory_index_names.contains(&file_name) {
@@ -269,9 +272,8 @@ fn walk_dir(dir: &str, config: &AutoGenConfig) -> MdGroup {
         if arr.len() < 2 {
             continue;
         }
-        let file_name = arr[0];
-        let file_ext = arr[1];
-        if file_ext.to_lowercase() != "md" {
+
+        if entry.path().extension() != Some(&OsString::from("md")) {
             continue;
         }
 
@@ -280,11 +282,12 @@ fn walk_dir(dir: &str, config: &AutoGenConfig) -> MdGroup {
         let md = MdFile {
             name: file_name.to_string(),
             title,
-            path: entry.path().to_str().unwrap().to_string(),
+            path: entry.path(),
         };
 
         group.md_list.push(md);
     }
 
+    eprintln!("{:?}", group.md_list.len());
     return group;
 }

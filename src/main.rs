@@ -5,6 +5,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use mdbook::errors::Error;
 use mdbook::preprocess::{CmdPreprocessor, Preprocessor};
 use std::io;
+use std::path::PathBuf;
 use std::process;
 
 use crate::auto_gen_summary::config::AutoGenConfig;
@@ -50,7 +51,7 @@ fn main() {
         let mut config = AutoGenConfig::new();
         config.first_line_as_link_text = sub_args.is_present("title");
 
-        auto_gen_summary::gen_summary(&source_dir, &config);
+        auto_gen_summary::gen_summary(&PathBuf::from(source_dir), &config);
     } else if let Err(e) = handle_preprocessing(&preprocessor) {
         eprintln!("{}", e);
         process::exit(1);
