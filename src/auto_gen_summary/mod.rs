@@ -20,7 +20,10 @@ const SUMMARY_FILE: &str = "SUMMARY.md";
 
 pub struct MdEntry {
     title: String,
+    /// The link that the entry link point to. None corresponds to a draft entry.
     path: Option<PathBuf>,
+    /// A path used only for sorting. Must not be empty.
+    sorting_path: PathBuf,
     children: Vec<MdEntry>,
 }
 
@@ -72,7 +75,9 @@ pub fn gen_summary(source_dir: &Path, config: &AutoGenConfig) {
     let group = walk_dir(source_dir, config);
     let mut lines = vec![String::from("# Summary\n")];
 
-    if let Some(group) = group {
+    if let Some(mut group) = group {
+        sort_entry_recursive(&mut group);
+
         lines.push(generate_summary_line(
             0,
             &group.title,
@@ -144,6 +149,17 @@ pub fn gen_summary(source_dir: &Path, config: &AutoGenConfig) {
         .unwrap();
     let mut summary_file_writer = BufWriter::new(summary_file);
     summary_file_writer.write_all(buff.as_bytes()).unwrap();
+}
+
+/// Recursively sorts the entries by path
+pub fn sort_entry_recursive(entry: &mut MdEntry) {
+    entry
+        .children
+        .sort_by(|a, b| a.sorting_path.cmp(&b.sorting_path));
+
+    for mut child in &mut entry.children {
+        sort_entry_recursive(&mut child);
+    }
 }
 
 fn gen_summary_for_entry(
@@ -240,6 +256,7 @@ fn walk_dir(dir: &Path, config: &AutoGenConfig) -> Option<MdEntry> {
                 file_name.to_string()
             },
             path: Some(entry.path()),
+            sorting_path: entry.path(),
             children: Vec::new(),
         };
 
@@ -272,11 +289,13 @@ fn walk_dir(dir: &Path, config: &AutoGenConfig) -> Option<MdEntry> {
                 }
             },
             path: Some(PathBuf::from(index_entry.path())),
+            sorting_path: PathBuf::from(dir),
             children: result_children,
         },
         None => MdEntry {
             title: dir_name_as_string,
             path: None,
+            sorting_path: PathBuf::from(dir),
             children: result_children,
         },
     })
