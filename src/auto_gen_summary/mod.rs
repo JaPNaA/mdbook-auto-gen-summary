@@ -20,14 +20,13 @@ const SUMMARY_FILE: &str = "SUMMARY.md";
 
 #[derive(Debug)]
 pub struct MdFile {
-    pub name: String,
     pub title: String,
     pub path: PathBuf,
 }
 
 #[derive(Debug)]
 pub struct MdGroup {
-    pub name: OsString,
+    pub title: String,
     pub path: PathBuf,
     pub readme_name: Option<String>,
     pub group_list: Vec<MdGroup>,
@@ -129,19 +128,15 @@ fn gen_summary_lines(root_dir: &Path, group: &MdGroup, config: &AutoGenConfig) -
     } else {
         String::from("")
     };
-    let mut name = group.name.to_string_lossy().to_string();
 
     let buff_link: String;
-    if name == "src" {
-        name = String::from("Welcome");
-    }
     if cnt == 0 {
         lines.push(String::from("# Summary"));
 
         buff_link = format!(
             "{}* [{}]({})",
             buff_spaces,
-            name,
+            group.title,
             group
                 .readme_name
                 .as_ref()
@@ -151,7 +146,7 @@ fn gen_summary_lines(root_dir: &Path, group: &MdGroup, config: &AutoGenConfig) -
         buff_link = format!(
             "{}* [{}]({}/{})",
             buff_spaces,
-            name,
+            group.title,
             path.to_string_lossy().to_string(),
             group
                 .readme_name
@@ -160,11 +155,9 @@ fn gen_summary_lines(root_dir: &Path, group: &MdGroup, config: &AutoGenConfig) -
         );
     }
 
-    if buff_spaces.len() == 0 {
-        lines.push(String::from("\n"));
-        if name != "Welcome" {
-            lines.push(String::from("----"));
-        }
+    // Insert a horizontal line before first-level directories
+    if cnt == 1 {
+        lines.push(String::from("\n----\n"));
     }
 
     lines.push(buff_link);
@@ -188,22 +181,12 @@ fn gen_summary_lines(root_dir: &Path, group: &MdGroup, config: &AutoGenConfig) -
         let cnt = path.components().count();
         let buff_spaces = String::from(" ".repeat(4 * (cnt - 1)));
 
-        let buff_link: String;
-        if config.first_line_as_link_text && md.title.len() > 0 {
-            buff_link = format!(
-                "{}* [{}]({})",
-                buff_spaces,
-                md.title,
-                path.to_string_lossy().to_string()
-            );
-        } else {
-            buff_link = format!(
-                "{}* [{}]({})",
-                buff_spaces,
-                md.name,
-                path.to_string_lossy().to_string()
-            );
-        }
+        let buff_link = format!(
+            "{}* [{}]({})",
+            buff_spaces,
+            &md.title,
+            path.to_string_lossy().to_string()
+        );
 
         lines.push(buff_link);
     }
@@ -243,7 +226,7 @@ fn walk_dir(dir: &Path, config: &AutoGenConfig) -> MdGroup {
     let read_dir = fs::read_dir(dir).unwrap();
 
     let mut group = MdGroup {
-        name: OsString::from(dir.file_name().unwrap()),
+        title: dir.file_name().unwrap().to_string_lossy().to_string(),
         path: PathBuf::from(dir),
         readme_name: None,
         group_list: vec![],
@@ -278,8 +261,11 @@ fn walk_dir(dir: &Path, config: &AutoGenConfig) -> MdGroup {
         let title = get_title(&entry);
 
         let md = MdFile {
-            name: file_name.to_string(),
-            title,
+            title: if config.first_line_as_link_text && title.len() > 0 {
+                title
+            } else {
+                file_name.to_string()
+            },
             path: entry.path(),
         };
 
