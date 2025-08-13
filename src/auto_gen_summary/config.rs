@@ -9,13 +9,13 @@ const README_FILE: &str = "README.md";
 
 const OPT_FIRST_LINE_AS_LINK: &str = "first-line-as-link-text";
 const OPT_INDEX_FIRST_LINE_AS_DIRECTORY_LINK: &str = "index-first-line-as-directory-link-text";
-const OPT_GENERATE_STUB_DIRECTORY_INDEX: &str = "generate-stub-directory-index";
+const OPT_DIR_WITHOUT_INDEX_BEHAVIOR: &str = "directory-without-index-behavior";
 const OPT_DIRECTORY_INDEX_NAMES: &str = "directory-index-names";
 
 pub struct AutoGenConfig {
     pub first_line_as_link_text: bool,
     pub index_first_line_as_directory_link_text: bool,
-    pub generate_stub_directory_index: bool,
+    pub directory_without_index_behavior: DirectoryWithoutIndexBehavior,
     pub directory_index_names: HashSet<String>,
 }
 
@@ -24,7 +24,7 @@ impl AutoGenConfig {
         AutoGenConfig {
             first_line_as_link_text: false,
             index_first_line_as_directory_link_text: false,
-            generate_stub_directory_index: false,
+            directory_without_index_behavior: DirectoryWithoutIndexBehavior::Ignore,
             directory_index_names: {
                 let mut s = HashSet::new();
                 s.insert(String::from(README_FILE));
@@ -46,8 +46,20 @@ impl AutoGenConfig {
             self.index_first_line_as_directory_link_text = v.as_bool().unwrap_or(false);
         }
 
-        if let Some(v) = cfg.get(OPT_GENERATE_STUB_DIRECTORY_INDEX) {
-            self.generate_stub_directory_index = v.as_bool().unwrap_or(false);
+        if let Some(v) = cfg.get(OPT_DIR_WITHOUT_INDEX_BEHAVIOR) {
+            let Some(v) = v.as_str() else {
+                anyhow::bail!(
+                    "Config key '{}' must be a string",
+                    OPT_DIR_WITHOUT_INDEX_BEHAVIOR
+                );
+            };
+            let Some(v) = DirectoryWithoutIndexBehavior::from_str(v) else {
+                anyhow::bail!(
+                    "Config key '{}' must be one of 'ignore', 'draft', or 'generate-stub-index'",
+                    OPT_DIR_WITHOUT_INDEX_BEHAVIOR
+                );
+            };
+            self.directory_without_index_behavior = v;
         }
 
         if let Some(v) = cfg.get(OPT_DIRECTORY_INDEX_NAMES) {
@@ -80,5 +92,29 @@ impl AutoGenConfig {
         }
 
         Ok(())
+    }
+}
+
+/// Define the behavior for a directory with markdown files
+/// but no index markdown files found
+#[derive(PartialEq)]
+pub enum DirectoryWithoutIndexBehavior {
+    /// Ignore directory completely (default)
+    Ignore,
+    /// Mark the directory as a draft
+    Draft,
+    /// Create an stub index file automatically
+    /// Note: currently not implemented, behaves the same as Draft
+    GenerateStubIndex,
+}
+
+impl DirectoryWithoutIndexBehavior {
+    pub fn from_str(s: &str) -> Option<DirectoryWithoutIndexBehavior> {
+        match s {
+            "ignore" => Some(DirectoryWithoutIndexBehavior::Ignore),
+            "draft" => Some(DirectoryWithoutIndexBehavior::Draft),
+            "generate-stub-index" => Some(DirectoryWithoutIndexBehavior::GenerateStubIndex),
+            _ => None,
+        }
     }
 }

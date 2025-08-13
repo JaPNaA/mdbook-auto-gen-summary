@@ -11,26 +11,17 @@ use std::io::prelude::*;
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 
-use crate::auto_gen_summary::config::AutoGenConfig;
+use crate::auto_gen_summary::config::{AutoGenConfig, DirectoryWithoutIndexBehavior};
 
 pub mod config;
 
 pub const PREPROCESSOR_NAME: &str = "auto-gen-summary";
 const SUMMARY_FILE: &str = "SUMMARY.md";
 
-#[derive(Debug)]
-pub struct MdFile {
-    pub title: String,
-    pub path: PathBuf,
-}
-
-#[derive(Debug)]
-pub struct MdGroup {
-    pub title: String,
-    pub path: PathBuf,
-    pub readme_name: Option<String>,
-    pub group_list: Vec<MdGroup>,
-    pub md_list: Vec<MdFile>,
+pub struct MdEntry {
+    title: String,
+    path: Option<PathBuf>,
+    children: Vec<MdEntry>,
 }
 
 pub struct AutoGenSummary;
@@ -79,7 +70,45 @@ fn md5(buf: &String) -> String {
 
 pub fn gen_summary(source_dir: &Path, config: &AutoGenConfig) {
     let group = walk_dir(source_dir, config);
-    let lines = gen_summary_lines(source_dir, &group, config);
+    let mut lines = vec![String::from("# Summary\n")];
+
+    if let Some(group) = group {
+        lines.push(generate_summary_line(
+            0,
+            &group.title,
+            &group
+                .path
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or(String::from("")),
+        ));
+
+        let mut last_was_dir = false;
+
+        for child in group.children {
+            let entry_name = if let Some(path) = &child.path {
+                path.file_name().map(|p| OsString::from(p))
+            } else {
+                None
+            };
+            let is_dir = child.children.len() > 0;
+
+            if !is_dir && entry_name == Some(OsString::from(SUMMARY_FILE)) {
+                continue; // filter out summary file in first level directory
+            }
+
+            if last_was_dir || is_dir {
+                lines.push(String::from("\n----\n"));
+            }
+            last_was_dir = is_dir;
+
+            lines.append(&mut gen_summary_for_entry(source_dir, 0, &child, config));
+        }
+
+        // lines.append(&mut gen_summary_for_entry(source_dir, &group, config));
+    } else {
+        eprintln!("Warn: Your root directory is not being recognized. Make sure you have an index file (default 'SUMMARY.md')");
+    }
+
     let buff: String = lines.join("\n");
 
     let new_md5_string = md5(&buff);
@@ -117,86 +146,40 @@ pub fn gen_summary(source_dir: &Path, config: &AutoGenConfig) {
     summary_file_writer.write_all(buff.as_bytes()).unwrap();
 }
 
-fn gen_summary_lines(root_dir: &Path, group: &MdGroup, config: &AutoGenConfig) -> Vec<String> {
-    let mut lines: Vec<String> = vec![];
+fn gen_summary_for_entry(
+    root_dir: &Path,
+    depth: usize,
+    md_entry: &MdEntry,
+    config: &AutoGenConfig,
+) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
 
-    let path = group.path.strip_prefix(root_dir).unwrap();
-    let cnt = path.components().count();
-
-    let buff_spaces = if cnt > 0 {
-        String::from(" ".repeat(4 * (cnt - 1)))
+    let path = if let Some(path) = &md_entry.path {
+        path.strip_prefix(root_dir)
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
     } else {
         String::from("")
     };
 
-    let buff_link: String;
-    if cnt == 0 {
-        lines.push(String::from("# Summary"));
+    lines.push(generate_summary_line(depth, &md_entry.title, &path));
 
-        buff_link = format!(
-            "{}* [{}]({})",
-            buff_spaces,
-            group.title,
-            group
-                .readme_name
-                .as_ref()
-                .expect("Internal error: no README file for directory")
-        );
-    } else {
-        buff_link = format!(
-            "{}* [{}]({}/{})",
-            buff_spaces,
-            group.title,
-            path.to_string_lossy().to_string(),
-            group
-                .readme_name
-                .as_ref()
-                .expect("Internal error: no README file for directory")
-        );
-    }
-
-    // Insert a horizontal line before first-level directories
-    if cnt == 1 {
-        lines.push(String::from("\n----\n"));
-    }
-
-    lines.push(buff_link);
-
-    for md in &group.md_list {
-        let path = md.path.strip_prefix(root_dir).unwrap();
-        if path.file_name() == Some(&OsString::from(SUMMARY_FILE)) {
-            continue;
-        }
-
-        if config
-            .directory_index_names
-            .contains(&match path.file_name() {
-                Some(x) => x.to_string_lossy().to_string(),
-                None => String::from(""),
-            })
-        {
-            continue;
-        }
-
-        let cnt = path.components().count();
-        let buff_spaces = String::from(" ".repeat(4 * (cnt - 1)));
-
-        let buff_link = format!(
-            "{}* [{}]({})",
-            buff_spaces,
-            &md.title,
-            path.to_string_lossy().to_string()
-        );
-
-        lines.push(buff_link);
-    }
-
-    for group in &group.group_list {
-        let mut line = gen_summary_lines(root_dir, group, config);
+    for child in &md_entry.children {
+        let mut line = gen_summary_for_entry(root_dir, depth + 1, &child, config);
         lines.append(&mut line);
     }
 
     lines
+}
+
+fn generate_summary_line(indentation_level: usize, title: &str, link: &str) -> String {
+    format!(
+        "{}* [{}]({})",
+        " ".repeat(4 * indentation_level),
+        title,
+        link
+    )
 }
 
 fn get_title(entry: &DirEntry) -> String {
@@ -222,35 +205,25 @@ fn get_title(entry: &DirEntry) -> String {
     return title;
 }
 
-fn walk_dir(dir: &Path, config: &AutoGenConfig) -> MdGroup {
+fn walk_dir(dir: &Path, config: &AutoGenConfig) -> Option<MdEntry> {
     let read_dir = fs::read_dir(dir).unwrap();
 
-    let mut group = MdGroup {
-        title: dir.file_name().unwrap().to_string_lossy().to_string(),
-        path: PathBuf::from(dir),
-        readme_name: None,
-        group_list: vec![],
-        md_list: vec![],
-    };
+    let mut child_directories = Vec::new();
+    let mut result_children = Vec::new();
+    let mut index_entry = None;
 
     for entry in read_dir {
         let entry = entry.unwrap();
 
         if entry.file_type().unwrap().is_dir() {
-            let g = walk_dir(&entry.path(), &config);
-            if g.readme_name.is_some() {
-                group.group_list.push(g);
-            }
+            child_directories.push(entry);
             continue;
         }
 
         let file_name = entry.file_name();
         let file_name = file_name.to_str().unwrap().to_string();
         if config.directory_index_names.contains(&file_name) {
-            let _ = group.readme_name.insert(file_name.clone());
-        }
-        let arr: Vec<&str> = file_name.split(".").collect();
-        if arr.len() < 2 {
+            let _ = index_entry.insert(entry);
             continue;
         }
 
@@ -260,17 +233,51 @@ fn walk_dir(dir: &Path, config: &AutoGenConfig) -> MdGroup {
 
         let title = get_title(&entry);
 
-        let md = MdFile {
+        let md = MdEntry {
             title: if config.first_line_as_link_text && title.len() > 0 {
                 title
             } else {
                 file_name.to_string()
             },
-            path: entry.path(),
+            path: Some(entry.path()),
+            children: Vec::new(),
         };
 
-        group.md_list.push(md);
+        result_children.push(md);
     }
 
-    return group;
+    if index_entry.is_none()
+        && config.directory_without_index_behavior == DirectoryWithoutIndexBehavior::Ignore
+    {
+        return None;
+    }
+
+    for child_dir in child_directories {
+        let g = walk_dir(&child_dir.path(), &config);
+        if let Some(g) = g {
+            result_children.push(g);
+        }
+    }
+
+    let dir_name_as_string = dir.file_name().unwrap().to_string_lossy().to_string();
+
+    Some(match index_entry {
+        Some(index_entry) => MdEntry {
+            title: {
+                let t = get_title(&index_entry);
+                if t.len() > 0 {
+                    t
+                } else {
+                    dir_name_as_string
+                }
+            },
+            path: Some(PathBuf::from(index_entry.path())),
+            children: result_children,
+        },
+        None => MdEntry {
+            title: dir_name_as_string,
+            path: None,
+            children: result_children,
+        },
+    })
 }
