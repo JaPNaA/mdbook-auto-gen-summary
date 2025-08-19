@@ -3,10 +3,10 @@ use md5::{Digest, Md5};
 use mdbook::book::Book;
 use mdbook::errors::Error;
 use mdbook::preprocess::{Preprocessor, PreprocessorContext};
+use mdbook::utils;
 use mdbook::MDBook;
 use std::ffi::OsString;
 use std::fs;
-use std::fs::DirEntry;
 use std::io::prelude::*;
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
@@ -198,8 +198,8 @@ fn generate_summary_line(indentation_level: usize, title: &str, link: &str) -> S
     )
 }
 
-fn get_title(entry: &DirEntry) -> String {
-    let md_file = std::fs::File::open(entry.path().to_str().unwrap()).unwrap();
+fn get_title(md_file_path: &Path) -> String {
+    let md_file = std::fs::File::open(md_file_path).unwrap();
     let mut md_file_content = String::new();
     let mut md_file_reader = BufReader::new(md_file);
     md_file_reader.read_to_string(&mut md_file_content).unwrap();
@@ -239,7 +239,7 @@ fn walk_dir(dir: &Path, config: &AutoGenConfig) -> Option<MdEntry> {
         let file_name = entry.file_name();
         let file_name = file_name.to_str().unwrap().to_string();
         if config.directory_index_names.contains(&file_name) {
-            let _ = index_entry.insert(entry);
+            let _ = index_entry.insert(entry.path());
             continue;
         }
 
@@ -247,7 +247,7 @@ fn walk_dir(dir: &Path, config: &AutoGenConfig) -> Option<MdEntry> {
             continue;
         }
 
-        let title = get_title(&entry);
+        let title = get_title(&entry.path());
 
         let md = MdEntry {
             title: if config.first_line_as_link_text && title.len() > 0 {
@@ -263,10 +263,22 @@ fn walk_dir(dir: &Path, config: &AutoGenConfig) -> Option<MdEntry> {
         result_children.push(md);
     }
 
-    if index_entry.is_none()
-        && config.directory_without_index_behavior == DirectoryWithoutIndexBehavior::Ignore
-    {
-        return None;
+    if index_entry.is_none() {
+        match config.directory_without_index_behavior {
+            DirectoryWithoutIndexBehavior::GenerateStubIndex => {
+                let mut index_entry_path = PathBuf::from(dir);
+                index_entry_path.push(&config.generated_directory_index_name);
+                let _ = utils::fs::create_file(&index_entry_path).unwrap();
+                index_entry = Some(index_entry_path);
+            }
+            DirectoryWithoutIndexBehavior::Ignore => {
+                // ignore directory
+                return None;
+            }
+            DirectoryWithoutIndexBehavior::Draft => {
+                // continue with no index
+            }
+        }
     }
 
     for child_dir in child_directories {
@@ -288,7 +300,7 @@ fn walk_dir(dir: &Path, config: &AutoGenConfig) -> Option<MdEntry> {
                     dir_name_as_string
                 }
             },
-            path: Some(PathBuf::from(index_entry.path())),
+            path: Some(index_entry),
             sorting_path: PathBuf::from(dir),
             children: result_children,
         },

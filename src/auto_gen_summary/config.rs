@@ -13,10 +13,44 @@ const OPT_DIR_WITHOUT_INDEX_BEHAVIOR: &str = "directory-without-index-behavior";
 const OPT_DIRECTORY_INDEX_NAMES: &str = "directory-index-names";
 
 pub struct AutoGenConfig {
+    /// Whether the first line of the markdown file should be used
+    /// as the file's title. If false, the title is name of the file.
+    ///
+    /// Note, the first line must be an h1 (start with `# ` to be
+    /// recognized as the title.)
+    ///
+    /// Default: false
     pub first_line_as_link_text: bool,
-    pub index_first_line_as_directory_link_text: bool,
-    pub directory_without_index_behavior: DirectoryWithoutIndexBehavior,
+
+    /// The names of the files that can serve as an index for a directory.
+    /// For example, "README.md" or "index.md".
+    ///
+    /// Default: { "README.md" }
     pub directory_index_names: HashSet<String>,
+
+    /// Whether the first line of the directory index markdown file
+    /// should be used as the directory's title. If false, the title
+    /// is the name of the directory.
+    ///
+    /// Default: false
+    pub index_first_line_as_directory_link_text: bool,
+
+    /// What to do if we find a directory without an index file in the
+    /// directory?
+    ///
+    /// Options: Ignore the directory, mark the directory as a draft, or
+    /// create the index file (index file name specified by
+    /// `generated_directory_index_name` option).
+    ///
+    /// Default: Ignore
+    pub directory_without_index_behavior: DirectoryWithoutIndexBehavior,
+
+    /// The name of the index file to create in a directory without any other
+    /// index files. This is specified by the first `directory_index_names`
+    /// option specified.
+    ///
+    /// Default: "README.md"
+    pub generated_directory_index_name: String,
 }
 
 impl AutoGenConfig {
@@ -30,6 +64,7 @@ impl AutoGenConfig {
                 s.insert(String::from(README_FILE));
                 s
             },
+            generated_directory_index_name: String::from(README_FILE),
         }
     }
 
@@ -64,6 +99,7 @@ impl AutoGenConfig {
 
         if let Some(v) = cfg.get(OPT_DIRECTORY_INDEX_NAMES) {
             let mut directory_index_names = HashSet::new();
+            let mut generated_directory_index_name = None;
 
             let Some(v) = v.as_array() else {
                 anyhow::bail!(
@@ -79,15 +115,20 @@ impl AutoGenConfig {
                     );
                 };
                 directory_index_names.insert(String::from(item));
+
+                if generated_directory_index_name.is_none() {
+                    generated_directory_index_name = Some(String::from(item));
+                }
             }
 
-            if directory_index_names.len() == 0 {
+            let Some(generated_directory_index_name) = generated_directory_index_name else {
                 anyhow::bail!(
                     "Config key {} must not be empty.",
                     OPT_DIRECTORY_INDEX_NAMES
                 )
-            }
+            };
 
+            self.generated_directory_index_name = generated_directory_index_name;
             self.directory_index_names = directory_index_names;
         }
 
@@ -104,7 +145,6 @@ pub enum DirectoryWithoutIndexBehavior {
     /// Mark the directory as a draft
     Draft,
     /// Create an stub index file automatically
-    /// Note: currently not implemented, behaves the same as Draft
     GenerateStubIndex,
 }
 
