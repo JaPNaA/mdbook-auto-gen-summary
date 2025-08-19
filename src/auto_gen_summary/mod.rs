@@ -293,9 +293,13 @@ fn walk_dir(dir: &Path, config: &AutoGenConfig) -> Option<MdEntry> {
     Some(match index_entry {
         Some(index_entry) => MdEntry {
             title: {
-                let t = get_title(&index_entry);
-                if t.len() > 0 {
-                    t
+                if config.index_first_line_as_directory_link_text {
+                    let t = get_title(&index_entry);
+                    if t.len() > 0 {
+                        t
+                    } else {
+                        dir_name_as_string
+                    }
                 } else {
                     dir_name_as_string
                 }
