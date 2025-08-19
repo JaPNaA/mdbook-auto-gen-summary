@@ -76,6 +76,10 @@ pub fn gen_summary(source_dir: &Path, config: &AutoGenConfig) {
     let mut lines = vec![String::from("# Summary\n")];
 
     if let Some(mut group) = group {
+        if !config.index_first_line_as_directory_link_text {
+            group.title = String::from("Welcome");
+        }
+
         sort_entry_recursive(&mut group);
 
         lines.push(generate_summary_line(
