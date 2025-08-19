@@ -10,6 +10,8 @@ A preprocessor and cli tool for mdbook to automatically generate the `SUMMARY.md
 cargo install mdbook-auto-gen-summary
 ```
 
+(or `cargo install --path .` when building from source.)
+
 It can be use in two ways:
 
 ### 1. Use as a cli tool.
