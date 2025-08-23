@@ -86,7 +86,7 @@ pub fn gen_summary(source_dir: &Path, config: &AutoGenConfig) {
             lines.push(generate_summary_line(
                 0,
                 &group.title,
-                &root_index_path.to_string_lossy().to_string(),
+                &RelativizedLink::from(source_dir, &Some(root_index_path)),
             ));
         }
 
@@ -182,14 +182,7 @@ fn gen_summary_for_entry(
 ) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
 
-    let path = if let Some(path) = &md_entry.path {
-        path.strip_prefix(root_dir)
-            .unwrap()
-            .to_string_lossy()
-            .to_string()
-    } else {
-        String::from("")
-    };
+    let path = RelativizedLink::from(root_dir, &md_entry.path);
 
     lines.push(generate_summary_line(depth, &md_entry.title, &path));
 
@@ -201,12 +194,31 @@ fn gen_summary_for_entry(
     lines
 }
 
-fn generate_summary_line(indentation_level: usize, title: &str, link: &str) -> String {
+/// Struct that marks a string as a relativized link.
+///
+/// This struct was made to prevents insertion of absolute paths into
+/// SUMMARY.md at compile time.
+struct RelativizedLink(String);
+
+impl RelativizedLink {
+    fn from(root_dir: &Path, path: &Option<PathBuf>) -> RelativizedLink {
+        RelativizedLink(if let Some(path) = path {
+            path.strip_prefix(root_dir)
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        } else {
+            String::from("")
+        })
+    }
+}
+
+fn generate_summary_line(indentation_level: usize, title: &str, link: &RelativizedLink) -> String {
     format!(
         "{}* [{}]({})",
         " ".repeat(4 * indentation_level),
         title,
-        link
+        &link.0
     )
 }
 
