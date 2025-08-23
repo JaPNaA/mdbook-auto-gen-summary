@@ -82,15 +82,15 @@ pub fn gen_summary(source_dir: &Path, config: &AutoGenConfig) {
 
         sort_entry_recursive(&mut group);
 
-        lines.push(generate_summary_line(
-            0,
-            &group.title,
-            &group
-                .path
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or(String::from("")),
-        ));
+        if let Some(root_index_path) = group.path {
+            lines.push(generate_summary_line(
+                0,
+                &group.title,
+                &root_index_path.to_string_lossy().to_string(),
+            ));
+        }
 
+        // This variable is used to insert "---" lines *around* top-level directories
         let mut last_was_dir = false;
 
         for child in group.children {
@@ -112,8 +112,6 @@ pub fn gen_summary(source_dir: &Path, config: &AutoGenConfig) {
 
             lines.append(&mut gen_summary_for_entry(source_dir, 0, &child, config));
         }
-
-        // lines.append(&mut gen_summary_for_entry(source_dir, &group, config));
     } else {
         let mut suggested_generate_file_path = PathBuf::from(source_dir);
         suggested_generate_file_path.push(&config.generated_directory_index_name);
