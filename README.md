@@ -1,6 +1,6 @@
 # mdbook-auto-gen-summary
 
-A preprocessor and cli tool for mdbook to automatically generate the `SUMMARY.md` file from your existing directory structure.
+A preprocessor and CLI tool for mdbook to automatically generate the `SUMMARY.md` file from your existing directory structure.
 
 ## Usage
 
@@ -14,7 +14,7 @@ cargo install mdbook-auto-gen-summary
 
 It can be use in two ways:
 
-### 1. Use as a cli tool.
+### CLI
 
 ```bash
 mdbook-auto-gen-summary gen /path/to/your/mdbook/src
@@ -32,7 +32,7 @@ You can specify the following options (see [configuration](#configuration)):
 
 This will walk your mdbook src dir and generate the book summary in /path/to/your/mdbook/src/SUMMARY.md
 
-### 2. Use as mdbook preprocessor.
+### mdbook preprocessor
 
 #### Configuration
 
@@ -93,3 +93,67 @@ Or
 ```bash
 mdbook build
 ```
+
+## Troubleshooting
+
+### Building the book fails because a Chapter file is not found
+
+If you get an error like this:
+
+```
+[...] [ERROR] (mdbook::cmd::watch::poller): failed to load book config: Chapter file not found, [...]
+
+Caused by:
+    No such file or directory (os error 2)
+```
+
+This may be because you deleted a file. `mdbook` won't continue the build if it cannot find a file listed in `SUMMARY.md`.
+
+The simple solution is to empty the `SUMMARY.md` file or rerun `md-book-auto-gen-summary` manually using the [CLI](#cli).
+
+### I delete a file but the file reappears
+
+#### Solution 1
+
+Stop `mdbook serve`, delete the file, then empty the `SUMMARY.md` file. Then, run `mdbook serve` again.
+
+#### Solution 2
+
+Add the following option to `book.toml`.
+
+```toml
+[build]
+create-missing = false
+```
+
+Then, empty the `SUMMARY.md` file or rerun the [CLI](#cli) before `mdbook` can build the book.
+
+### My folder doesn't appear in the summary
+
+#### Solution 1
+
+Add a `README.md` file to the directory you want to show.
+
+If you have set the option `directory-index-names`, you need to make a file with one of the names specified by `directory-index-names` instead.
+
+#### Solution 2
+
+If you don't want an index file for every directory (i.e, a chapter to open when you click on the folder), you can add the following option to `book.toml`.
+
+```toml
+[preprocessor.auto-gen-summary]
+directory-without-index-behavior = "draft"
+```
+
+If you're using the CLI, you can set this by adding `-w draft` to the end of the command.
+
+#### Solution 3
+
+If you **do** want an index file for every directory, you can create the index files automatically by adding the following option to `book.toml`
+
+```toml
+[preprocessor.auto-gen-summary]
+directory-without-index-behavior = "generate-stub-index"
+```
+
+If you're using the CLI, you can set this by adding `-w generate-stub-index` to the end of the command.
