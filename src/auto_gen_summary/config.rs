@@ -68,6 +68,8 @@ impl AutoGenConfig {
         }
     }
 
+    /// Given the config object from mdbook, extract the relevant options
+    /// for this preprocessor.
     pub fn apply_config(&mut self, mdbook_config: &Config) -> Result<(), Error> {
         let Some(cfg) = mdbook_config.get_preprocessor(PREPROCESSOR_NAME) else {
             return Ok(());
