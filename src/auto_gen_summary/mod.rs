@@ -115,7 +115,17 @@ pub fn gen_summary(source_dir: &Path, config: &AutoGenConfig) {
 
         // lines.append(&mut gen_summary_for_entry(source_dir, &group, config));
     } else {
-        eprintln!("Warn: Your root directory is not being recognized. Make sure you have an index file (default 'SUMMARY.md')");
+        let mut suggested_generate_file_path = PathBuf::from(source_dir);
+        suggested_generate_file_path.push(&config.generated_directory_index_name);
+        eprintln!("Warn: Your root directory is not being recognized. Make sure you have an index file in your root directory.
+
+Suggested fixes:
+  - Create the file '{}'
+  - Set the option 'dir-without-index-behavior' to 'draft' or 'gen-stub-index'
+  - Set the option 'dir-index-names' to the name of a file in the directory '{}'",
+            suggested_generate_file_path.to_string_lossy().to_string(),
+            source_dir.to_string_lossy().to_string()
+        );
     }
 
     let buff: String = lines.join("\n");

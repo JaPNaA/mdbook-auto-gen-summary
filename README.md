@@ -18,15 +18,17 @@ It can be use in two ways:
 
 ```bash
 mdbook-auto-gen-summary gen /path/to/your/mdbook/src
+
+# with options...
+mdbook-auto-gen-summary gen src -t -T -i index.md,README.md -w draft
 ```
 
-or
+You can specify the following options (see [configuration](#configuration)):
 
-```bash
-mdbook-auto-gen-summary gen -t /path/to/your/mdbook/src
-```
-
-- `-t` sets `first-line-as-link-text` to true (see [configuration](#configuration))
+- `--title` / `-t` sets `first-line-as-link-text` to true
+- `--dir-title` / `-T` sets `index-first-line-as-directory-link-text` to true
+- `--dir-index-names` / `-i` followed by a comma-separated list sets `directory-index-names`
+- `--dir-without-index-behavior` / `-w` followed by a string sets `directory-without-index-behavior`
 
 This will walk your mdbook src dir and generate the book summary in /path/to/your/mdbook/src/SUMMARY.md
 
